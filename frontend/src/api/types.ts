@@ -11,6 +11,7 @@ export interface HeatSummary {
   heat_id: string;
   date: string;
   shift: string;
+  steel_group: string;
   events: HeatEvents;
   tap_weight_t: number | null;
   energy_kwh_per_t: number | null;
@@ -57,6 +58,65 @@ export interface PhaseMeta {
   id: string;
   label_ko: string;
 }
+
+// --- 메타/스펙 레지스트리 (백엔드 domain/specs.py · domain/materials.py) ---
+
+/** 지표 스펙. lo/hi가 null이면 밴드 없음(판정 대상 아님). */
+export interface MetricSpec {
+  id: string;
+  label_ko: string;
+  unit: string;
+  decimals: number;
+  lo: number | null;
+  hi: number | null;
+}
+
+export interface KpiSummaryCard {
+  id: string;
+  label_ko: string;
+  unit: string;
+  decimals: number;
+  value: number | null;
+  prev_value: number | null;
+  spec_id: string | null;
+}
+
+export interface KpiSummaryResponse {
+  period: "day" | "week" | "month";
+  bucket_start: string | null;
+  bucket_end: string | null;
+  prev_bucket_start: string | null;
+  cards: KpiSummaryCard[];
+}
+
+/** 조업 페이즈 구간(산출 가능한 것만 포함). */
+export interface PhaseInterval {
+  phase: string;
+  label_ko: string;
+  start: string;
+  end: string;
+}
+
+export interface MaterialsMeta {
+  scrap_grades: Record<string, string>;
+  addition_materials: Record<string, string>;
+  steel_groups: Record<string, string>;
+}
+
+/** 부원료 투입 이벤트. */
+export interface AdditionEvent {
+  ts: string;
+  material: string;
+  label_ko: string;
+  amount_kg: number;
+}
+
+/** KPI 트렌드 1행 = heat 1건. 지표 키는 SPEC_REGISTRY의 id와 동일. */
+export type KpiTrendRow = {
+  heat_id: string;
+  date: string;
+  steel_group: string;
+} & Record<string, number | string | null>;
 
 // --- Discussion (백엔드 StreamEvent와 일치) ---
 

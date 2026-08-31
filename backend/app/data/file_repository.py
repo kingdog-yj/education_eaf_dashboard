@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.data.repository import HeatNotFoundError, HeatRepository
+from app.domain import specs
 from app.domain.materials import ADDITION_MATERIALS, SCRAP_GRADES
 from app.domain.models import (
     AdditionEvent,
@@ -25,6 +26,14 @@ from app.domain.tags import TAG_REGISTRY
 # charge_scrap_{code}_t 컬럼 규약 (등급 코드는 domain/materials.SCRAP_GRADES가 유일 선언 지점)
 _SCRAP_COL_PREFIX = "charge_scrap_"
 _SCRAP_COL_SUFFIX = "_t"
+
+# KPI 트렌드 행의 식별/그룹 기본 컬럼 (지표 컬럼은 SPEC_REGISTRY에서 파생)
+_TREND_BASE_COLS = ["heat_id", "date", "steel_group"]
+
+# slag_add_{code}_kg 컬럼 → additions_kg 키는 코드({code})만 남긴다
+# (domain/materials.ADDITION_MATERIALS 코드와 일치시키기 위함)
+_SLAG_ADD_COL_PREFIX = "slag_add_"
+_SLAG_ADD_COL_SUFFIX = "_kg"
 
 
 class ParquetHeatRepository(HeatRepository):
@@ -114,9 +123,17 @@ class ParquetHeatRepository(HeatRepository):
             df = df[df["date"] >= start]
         if end is not None:
             df = df[df["date"] <= end]
-        cols = ["heat_id", "date"] + [
-            c for c in df.columns if c.startswith("kpi_") and (not kpis or c in kpis)
-        ]
+        # 반환 컬럼 = 식별/그룹 기본 컬럼 + kpi_* 전부 + SPEC_REGISTRY 파생 컬럼.
+        # 지표 컬럼명은 하드코딩하지 않고 레지스트리 선언에서 얻는다(지표 추가 시 자동 반영).
+        candidates = (
+            [c for c in _TREND_BASE_COLS]
+            + [c for c in df.columns if c.startswith("kpi_") and (not kpis or c in kpis)]
+            + [c for c in specs.ids() if not kpis or c in kpis]
+        )
+        cols: list[str] = []
+        for c in candidates:
+            if c in df.columns and c not in cols:
+                cols.append(c)
         return df[cols].sort_values("date").to_dict(orient="records")
 
     def get_additions(self, heat_id: str) -> list[AdditionEvent]:
@@ -166,11 +183,12 @@ class ParquetHeatRepository(HeatRepository):
         )
 
     def _row_to_heat(self, row: pd.Series) -> Heat:
-        def group(prefix: str) -> dict:
+        def group(prefix: str, suffix: str = "") -> dict:
+            """prefix(및 suffix)를 벗겨낸 키로 컬럼 그룹을 dict로 묶는다."""
             return {
-                k.removeprefix(prefix): v
+                k.removeprefix(prefix).removesuffix(suffix): v
                 for k, v in row.items()
-                if k.startswith(prefix) and pd.notna(v)
+                if k.startswith(prefix) and k.endswith(suffix) and pd.notna(v)
             }
 
         return Heat(
@@ -183,7 +201,7 @@ class ParquetHeatRepository(HeatRepository):
             slag={
                 "composition_pct": group("slag_comp_"),
                 "basicity": row.get("slag_basicity"),
-                "additions_kg": group("slag_add_"),
+                "additions_kg": group(_SLAG_ADD_COL_PREFIX, _SLAG_ADD_COL_SUFFIX),
             },
             charge={
                 "baskets": self._baskets(row),

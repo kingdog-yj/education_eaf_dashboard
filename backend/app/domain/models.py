@@ -3,6 +3,7 @@
 API 응답 스키마로도 그대로 사용한다 (domain은 다른 계층에 의존하지 않는다).
 """
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -81,6 +82,34 @@ class Heat(BaseModel):
     kpi: KpiInfo = Field(default_factory=KpiInfo)
     eop: EopInfo = Field(default_factory=EopInfo)
     slag: SlagInfo = Field(default_factory=SlagInfo)
+
+
+class PhaseInterval(BaseModel):
+    """조업 페이즈 구간. phase 값은 domain/phases.HeatPhase."""
+    phase: str
+    label_ko: str
+    start: datetime
+    end: datetime
+
+
+class KpiSummaryCard(BaseModel):
+    """KPI 요약 카드 1개. 정의는 domain/specs.SUMMARY_CARDS."""
+    id: str
+    label_ko: str
+    unit: str
+    decimals: int
+    value: float | None = None
+    prev_value: float | None = None        # 직전 버킷 동일 집계 (없으면 None)
+    spec_id: str | None = None             # 값 판정용 SPEC_REGISTRY id
+
+
+class KpiSummaryResponse(BaseModel):
+    """일/주/월 KPI 요약. 버킷은 데이터 최신 heat date 기준."""
+    period: Literal["day", "week", "month"]
+    bucket_start: datetime | None = None
+    bucket_end: datetime | None = None
+    prev_bucket_start: datetime | None = None
+    cards: list[KpiSummaryCard] = Field(default_factory=list)
 
 
 class TimeseriesPoint(BaseModel):

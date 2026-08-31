@@ -17,6 +17,14 @@ class HeatPhase(str, Enum):
         return _LABELS_KO[self]
 
 
+#: 페이즈 경계 휴리스틱 상수 — 경계 산출의 유일한 선언 지점.
+#: 현재 데이터에는 천공 종료·용락 안정화 같은 경계 이벤트가 없어(이벤트는
+#: power_on/meltdown/tap_start/tap_end 4종뿐) 더미 단계의 추정값을 쓴다.
+#: 실데이터(경계 이벤트 포함) 연결 시 재검토하되, 조정은 이 선언 수정만으로 완결된다.
+BORE_IN_DURATION_S: float = 180.0    # 천공(bore-in) 지속 시간 추정 — power_on 기준
+MELTDOWN_SETTLE_S: float = 120.0     # 용락 후 아크 안정화 구간 추정 — meltdown 기준
+
+
 _LABELS_KO: dict[HeatPhase, str] = {
     HeatPhase.BORE_IN: "천공 (bore-in)",
     HeatPhase.EXPANSION: "천공 확장",

@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_heat_service
 from app.data.repository import HeatNotFoundError
-from app.domain.models import AdditionEvent, Heat, HeatSummary, HeatTimeseries
+from app.domain.models import (
+    AdditionEvent,
+    Heat,
+    HeatSummary,
+    HeatTimeseries,
+    PhaseInterval,
+)
 from app.services.heat_service import HeatService
 
 router = APIRouter(prefix="/api/heats", tags=["heats"])
@@ -40,6 +46,15 @@ def get_timeseries(
         return service.get_timeseries(heat_id, tag_ids, downsample)
     except HeatNotFoundError:
         raise HTTPException(404, f"heat {heat_id} 시계열 없음")
+
+
+@router.get("/{heat_id}/phases", response_model=list[PhaseInterval])
+def get_phases(heat_id: str, service: HeatService = Depends(get_heat_service)):
+    """조업 페이즈 구간(차트 음영용). 산출 불가 페이즈는 배열에서 생략된다."""
+    try:
+        return service.get_phases(heat_id)
+    except HeatNotFoundError:
+        raise HTTPException(404, f"heat {heat_id} 없음")
 
 
 @router.get("/{heat_id}/additions", response_model=list[AdditionEvent])

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     data_backend: Literal["file", "sql"] = "file"
     data_dir: Path = PROJECT_ROOT / "data" / "dummy"
 
+    # 프론트 빌드 산출물 (존재 시 단일 포트 정적 서빙 + SPA fallback)
+    frontend_dist_dir: Path = PROJECT_ROOT / "frontend" / "dist"
+
     # 향후 사내 DB (혼재: MSSQL + Oracle)
     mssql_conn_str: str = ""
     oracle_dsn: str = ""

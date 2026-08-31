@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_heat_service
+from app.domain.models import KpiSummaryResponse
 from app.services.heat_service import HeatService
 
 router = APIRouter(prefix="/api/kpi", tags=["kpi"])
@@ -17,7 +18,7 @@ def kpi_trend(
     return service.get_kpi_trend(start, end)
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=KpiSummaryResponse)
 def kpi_summary(
     period: str = Query("day", pattern="^(day|week|month)$"),
     service: HeatService = Depends(get_heat_service),

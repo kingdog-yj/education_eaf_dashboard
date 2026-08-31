@@ -28,27 +28,33 @@
 - 수율 모델: 명세 N(92.5%, 0.7%)는 출강 148~153t 제약과 수학적으로 양립 불가 → 출강 목표에서 역산, 결과 수율 평균 93.95%
 - POT 실분포는 36.4~40.3분(밴드 상반부 집중). 계약 충족이나 33~36분대가 필요하면 생성기 조정 필요
 
+### 2026-08-31 — 대시보드 v1 완성 (planner→병렬 코딩→verifier 34개 체크포인트 전 항목 PASS)
+
+**인터뷰 확정**: LLM 기본 gpt-5 / 3개 뷰 집중(Live 골격 유지) / 판정은 조업 스펙 밴드 / 서빙은 dev 2프로세스 + 8000 단일 포트 정적 서빙 둘 다. 계획 문서: `docs/plans/dashboard-v1.md`
+
+- **백엔드**: `domain/specs.py` 스펙 레지스트리(11지표, 수치 유일 선언 지점) + `GET /api/meta/specs`·`/api/meta/materials`·`/api/heats/{id}/phases` 신규, `kpi/summary` 일/주/월 집계 실구현(카드 8종, 데이터 최신 date 기준 버킷 + 직전 버킷 대비), trend 행 확장(steel_group·EOP·장입), slag additions 키 정리(P3 반영), FastAPI가 frontend/dist 정적 서빙(SPA fallback, 경로 탈출 방지). pytest 17개 통과.
+- **OpenAI 실동작 검증 완료**: gpt-5 + Responses API 스트리밍 실호출 성공(web_search tool "web_search" 수락, SDK 3.6.0). 예외→ERROR 이벤트 정규화, 키 마스킹. 스모크: `backend/scripts/smoke_openai.py`(비용 주의 — 필요 시에만 실행).
+- **프론트**: 디자인 토큰 CSS 변수화(reference-naver.md 실측 준수 — 흰 배경/1% 틴트 카드/헤어라인 보더/단일 액센트 #0078d4/그림자 미사용), 채팅 패널 드래그 리사이즈(기본 25vw, 20~50vw 클램프), HeatDetail(페이즈 음영+용락 수직선+부원료 마커+태그별 서브플롯+스펙 판정 카드/표), Trend(지표 선택+기간 필터+그룹 색상+스펙 밴드+이탈 하이라이트+클릭→상세), KPI 요약(카드 8종+직전 대비), 채팅 마크다운/tool 칩/출처/조건부 자동 스크롤. 스펙·태그·페이즈 id 하드코딩 0건(전부 meta API 기반).
+- 신규 의존성: react-markdown, remark-gfm.
+
+**실행**: dev는 README 명령 그대로(8000+5173). 단일 포트는 `npm run build` 후 uvicorn 8000만 → http://localhost:8000 (빌드를 서버 기동 후 처음 만든 경우 서버 재기동 필요 — dist 존재 여부를 기동 시점에 평가).
+
 ## 2. 향후 계획 작업 명세
 
 각 단계는 CLAUDE.md 에이전트 체계(planner 명세 → 코딩 → verifier)로 수행한다.
 
-### P1. 대시보드 실데이터 완성 (다음 작업, 우선순위 최상)
-- **HeatDetailView**: 페이즈 구간 음영(BORE_IN~TAPPING) + 용락/출강 이벤트 수직선 + 부원료 투입 마커(additions API), 태그 그룹별 서브플롯(전력/산소/분탄 개별 y축), 정적 패널을 JSON pre → 정식 표/카드로 (KPI·EOP·슬래그·장입 한국어 라벨은 meta API/materials 기반)
-- **TrendView**: KPI 선택 UI, 기간 필터(dashboardContext.setPeriod 연동), 강종 그룹별 색상 구분, heat 클릭 → 상세 뷰 이동
-- **KpiSummaryView**: 백엔드 `HeatService.get_kpi_summary` 집계 구현(일/주/월: 생산량 합, 평균 원단위, 평균 수율 등) + 프론트 카드 UI
-- **LiveView**: `LiveStreamService.stream` 실구현(과거 heat 시계열 실시간 재생, 재생 속도 파라미터) + 프론트 차트 append
-- 병렬화: KPI 집계·Live 백엔드(backend-coder) ↔ 차트/뷰(frontend-coder), 계약은 planner가 사전 고정
+### P1(잔여). LiveView 실구현
+- `LiveStreamService.stream` 실구현(과거 heat 시계열 실시간 재생, 재생 속도 파라미터) + 프론트 차트 append. 현재는 heartbeat 골격만.
 
-### P2. Discussion 실동작 검증·고도화
-- OpenAIProvider 스트리밍 이벤트 필드를 SDK 실호출로 검증/보정 (`llm/openai_provider.py`의 스켈레톤 주석 참조)
-- tool 실동작 확인: query_heat_detail/query_timeseries_stats/query_kpi_trend + 내장 web_search + search_scholar(무료 키 발급 권장: semanticscholar.org/product/api#api-key-form)
+### P2(잔여). Discussion 고도화
 - `QueryTimeseriesStatsTool`의 페이즈별(용락 전/후) 구간 통계 구현 (data_tools.py TODO)
-- 프론트: 마크다운 렌더링, 출처(citation) UI 정리, 컨텍스트 note 자동 요약 채우기
+- 컨텍스트 note 자동 요약 채우기(현재 빈 문자열 전송), 프롬프트/tool 튜닝
+- search_scholar 무료 키 발급 권장: semanticscholar.org/product/api#api-key-form (없으면 429 잦음)
 
-### P3. 품질 정리 (verifier 지적 사항)
-- `Heat.slag.additions_kg` 키 규약 통일: `group("slag_add_")`가 `_kg` 접미사를 남김(`file_repository.py`) — `_baskets`처럼 suffix 제거로 통일
+### P3(잔여). 품질 정리
 - `llm/tools/data_tools.py`의 llm→data 측면 의존 정리 검토, config 모듈 최상단 import 정리(sql_repository/providers/context_builder)
-- 테스트 확충(생성 데이터 기반 계약 테스트)
+- plotly 번들 4.4MB → 코드 스플리팅 검토
+- `main.py`의 dist 존재 평가를 기동 시점→요청 시점으로 개선 검토(빌드 후 재기동 불필요하게)
 
 ### P4. 사내 DB 연결
 - `SqlHeatRepository` 구현: ConnectionStrategy(MSSQL=pyodbc, Oracle=oracledb) 주입식, 데이터 종류별 쿼리 어댑터. requirements.txt 주석 해제, `.env`의 `DATA_BACKEND=sql` 전환. 사내 스키마 확정 후 착수
