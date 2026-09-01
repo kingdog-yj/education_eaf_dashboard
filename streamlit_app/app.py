@@ -537,7 +537,7 @@ def render_chat(view_id: str, heat_id: str | None) -> None:
 
 def main() -> None:
     st.title("EAF 공정 분석 대시보드")
-    st.caption("고정 스냅샷 데모 (c59ffe8) — 최신 버전은 별도 개발 중")
+    st.caption("고정 스냅샷 데모 (c59ffe8), 공정 데이터는 실제와 연관성 없는 더미값 — 최신 버전은 별도 개발 중")
 
     choice = st.sidebar.radio("뷰 선택", list(VIEW_OPTIONS.keys()))
     view_id = VIEW_OPTIONS[choice]
