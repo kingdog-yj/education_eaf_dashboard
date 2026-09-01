@@ -589,9 +589,43 @@ input[type="date"]:hover {
 .discussion-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--gap-sm);
   padding: 12px var(--gap);
   border-bottom: 1px solid var(--border);
+}
+
+/* LLM 모델·추론 강도 선택 — 헤더 둘째 줄, 우측 정렬 소형 컨트롤 */
+.llm-controls {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-xs);
+}
+
+.llm-controls select {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-muted);
+  border-color: var(--border);
+  border-radius: var(--r-control-sm);
+  padding: 2px 4px;
+  box-shadow: none;
+  max-width: 48%;
+}
+
+.llm-controls select:hover {
+  border-color: var(--border-strong);
+}
+
+.llm-hint {
+  width: 100%;
+  text-align: right;
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  color: var(--text-muted);
 }
 
 .discussion-header strong {
@@ -730,7 +764,76 @@ input[type="date"]:hover {
   color: var(--text-muted);
 }
 
+/* 대기(첫 토큰 전) 말풍선 */
+.msg-pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+  color: var(--text-muted);
+}
+
+.pending-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.pending-hint {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-muted);
+}
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 8px;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes dot-pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* tool 실행 칩 */
+.tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+}
+
 .tool-chip {
   align-self: flex-start;
   display: inline-flex;
@@ -744,6 +847,12 @@ input[type="date"]:hover {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 4px 12px 4px 10px;
+}
+
+.tool-chip.done {
+  background: var(--accent-tint);
+  border-color: transparent;
+  color: var(--accent);
 }
 
 .spinner {

@@ -1,5 +1,5 @@
 // POST /api/discussion 의 SSE 스트림을 파싱해 chatStore에 반영하는 훅.
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { StreamEvent } from "../api/types";
 import { useChatStore } from "../state/chatStore";
 import { useDashboardContext } from "../state/dashboardContext";
@@ -7,19 +7,36 @@ import { useDashboardContext } from "../state/dashboardContext";
 export function useChatStream() {
   const chat = useChatStore();
   const toPayload = useDashboardContext((s) => s.toPayload);
+  const abortRef = useRef<AbortController | null>(null);
+
+  /** 진행 중인 응답을 중단한다. 지금까지 받은 텍스트는 그대로 확정된다. */
+  const abort = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const send = useCallback(
     async (content: string) => {
       chat.addUserMessage(content);
-      const messages = [
-        ...useChatStore.getState().messages, // addUserMessage 반영 후 최신 이력
-      ];
+      const state = useChatStore.getState(); // addUserMessage 반영 후 최신 상태
+      const messages = [...state.messages];
+      // 모델·추론 강도는 전송 시점의 스토어 값을 그대로 보낸다(null=서버 기본값).
+      const model = state.model;
+      const reasoningEffort = state.reasoningEffort;
+
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       try {
         const resp = await fetch("/api/discussion", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages, context: toPayload() }),
+          body: JSON.stringify({
+            messages,
+            context: toPayload(),
+            model,
+            reasoning_effort: reasoningEffort,
+          }),
+          signal: controller.signal,
         });
         if (!resp.ok || !resp.body) throw new Error(`discussion → ${resp.status}`);
 
@@ -31,6 +48,7 @@ export function useChatStream() {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           // SSE 프레임: "data: {...}\n\n"
+          // (백엔드 keep-alive 주석 프레임 ": ping"은 data가 아니므로 자연히 무시된다)
           const frames = buffer.split("\n\n");
           buffer = frames.pop() ?? "";
           for (const frame of frames) {
@@ -40,17 +58,23 @@ export function useChatStream() {
           }
         }
       } catch (err) {
-        useChatStore
-          .getState()
-          .appendDelta(`\n\n⚠️ 오류: ${err instanceof Error ? err.message : err}`);
+        // 사용자가 중단한 경우는 오류가 아니다 — 받은 내용만 확정한다.
+        if (!controller.signal.aborted) {
+          useChatStore
+            .getState()
+            .appendDelta(
+              `\n\n오류: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
       } finally {
+        abortRef.current = null;
         useChatStore.getState().finishStreaming();
       }
     },
     [toPayload], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  return { send };
+  return { send, abort };
 }
 
 function handleEvent(ev: StreamEvent) {
@@ -63,13 +87,13 @@ function handleEvent(ev: StreamEvent) {
       chat.setActiveTool(ev.tool_name);
       break;
     case "tool_result":
-      chat.setActiveTool(null);
+      chat.completeTool(ev.tool_name || chat.activeTool || "");
       break;
     case "citation":
       chat.addCitation({ url: ev.url, title: ev.title });
       break;
     case "error":
-      chat.appendDelta(`\n\n⚠️ ${ev.text}`);
+      chat.appendDelta(`\n\n오류: ${ev.text}`);
       break;
     case "done":
       break;

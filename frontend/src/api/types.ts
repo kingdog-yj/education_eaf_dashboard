@@ -141,6 +141,14 @@ export interface StreamEvent {
   title: string;
 }
 
+/** LLM 모델/추론 강도(reasoning effort) 선택지 메타. GET /api/meta/llm */
+export interface LlmMeta {
+  models: { id: string; label_ko: string }[];
+  efforts: { id: string; label_ko: string }[];
+  default_model: string;
+  default_effort: string;
+}
+
 export interface DashboardContextPayload {
   view: string;
   heat_id: string | null;

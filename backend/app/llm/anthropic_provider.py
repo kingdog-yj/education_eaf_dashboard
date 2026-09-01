@@ -22,6 +22,8 @@ class AnthropicProvider(LLMProvider):
         self,
         system: str,
         messages: list[ChatMessage],
+        model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         raise NotImplementedError("Claude 전환 시 구현 (SPEC.md §8)")
         yield  # AsyncIterator 시그니처 유지용

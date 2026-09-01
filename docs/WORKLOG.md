@@ -39,6 +39,12 @@
 
 **실행**: dev는 README 명령 그대로(8000+5173). 단일 포트는 `npm run build` 후 uvicorn 8000만 → http://localhost:8000 (빌드를 서버 기동 후 처음 만든 경우 서버 재기동 필요 — dist 존재 여부를 기동 시점에 평가).
 
+### 2026-09-01 — 채팅 응답성 개선 (검증 7/7 PASS)
+
+- **진단**: "무응답"의 실체는 gpt-5 reasoning 지연(도구 유발 시 첫 토큰 17~148초) + 대기 UI 부재. 백엔드/컨텍스트 주입은 정상.
+- **수정**: ① 대기 인디케이터(경과 초·점 애니메이션·20초 지연 안내)+tool 실행 칩+응답 중단 버튼 ② SSE 하트비트(15초 무이벤트 시 ": ping" — 유휴 끊김 예방) ③ `GET /api/meta/llm` + `DiscussionRequest.model/reasoning_effort` 요청 단위 오버라이드(선택지는 `llm/options.py` 유일 선언) ④ 채팅 헤더 드롭다운(모델/추론 강도, meta 기반, 새로고침 없이 다음 전송부터 적용) ⑤ **기본값 gpt-5-mini + effort low로 전환** (사용자 지시).
+- **실측**: TTFB 148초(gpt-5 기본) → **8.45초**(gpt-5-mini+low, 도구 1회 포함; 도구 미사용 단문은 수 초 내). 심층 분석은 드롭다운에서 gpt-5/high 선택.
+
 ## 2. 향후 계획 작업 명세
 
 각 단계는 CLAUDE.md 에이전트 체계(planner 명세 → 코딩 → verifier)로 수행한다.

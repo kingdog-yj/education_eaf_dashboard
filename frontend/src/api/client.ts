@@ -6,6 +6,7 @@ import type {
   HeatTimeseries,
   KpiSummaryResponse,
   KpiTrendRow,
+  LlmMeta,
   MaterialsMeta,
   MetricSpec,
   PhaseInterval,
@@ -69,4 +70,6 @@ export const api = {
   getPhases: () => getMeta<PhaseMeta[]>("/api/meta/phases"),
   getSpecs: () => getMeta<MetricSpec[]>("/api/meta/specs"),
   getMaterials: () => getMeta<MaterialsMeta>("/api/meta/materials"),
+  /** Discussion용 LLM 모델·추론 강도 선택지. 미지원 백엔드에서는 reject된다. */
+  getLlmMeta: () => getMeta<LlmMeta>("/api/meta/llm"),
 };

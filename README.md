@@ -36,6 +36,10 @@ cp .env.example .env
 
 ## 실행
 
+원클릭: **`run.bat`** 더블클릭 → 8000 단일 포트로 실행 + 브라우저 자동 오픈. 개발(핫리로드)은 **`run-dev.bat`** (백엔드/프론트 창 2개 + 5173 오픈).
+
+수동 실행:
+
 ```bash
 # 백엔드 (http://localhost:8000)
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload --app-dir backend

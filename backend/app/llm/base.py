@@ -41,7 +41,14 @@ class LLMProvider(ABC):
         self,
         system: str,
         messages: list[ChatMessage],
-    ) -> AsyncIterator[StreamEvent]: ...
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """model/reasoning_effort는 요청 단위 오버라이드(None이면 설정 기본값).
+
+        선택지는 llm/options.py 선언을 따르며, 목록 밖 값은 기본값으로 폴백한다.
+        """
+        ...
 
 
 def create_provider() -> LLMProvider:

@@ -5,10 +5,11 @@ LLM 실호출은 비용 때문에 테스트하지 않는다 (scripts/smoke_opena
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.domain import specs
 from app.domain.materials import ADDITION_MATERIALS, SCRAP_GRADES, STEEL_GROUPS
 from app.domain.phases import HeatPhase
+from app.llm import options
 from app.main import app
 
 client = TestClient(app)
@@ -74,6 +75,29 @@ def test_is_out_of_spec_rules():
     assert not specs.is_out_of_spec({})
     # 밴드 없는 지표는 어떤 값이어도 이탈이 아님
     assert not specs.is_out_of_spec({"kpi_o2_nm3_per_t": 99999.0})
+
+
+# -- /api/meta/llm ----------------------------------------------------------
+
+
+def test_meta_llm_contract():
+    body = client.get("/api/meta/llm").json()
+    assert set(body) == {"models", "efforts", "default_model", "default_effort"}
+    assert [m["id"] for m in body["models"]] == ["gpt-5-mini", "gpt-5", "gpt-5-nano"]
+    assert [e["id"] for e in body["efforts"]] == ["minimal", "low", "medium", "high"]
+    for item in body["models"] + body["efforts"]:
+        assert set(item) == {"id", "label_ko"}
+        assert item["label_ko"]
+    # 기본값은 설정에서 온다 (.env가 덮어쓸 수 있음)
+    assert body["default_model"] == get_settings().llm_model
+    assert body["default_effort"] == get_settings().llm_reasoning_effort
+    # 코드상 기본값은 사용자 확정값 (빠른 응답이 기본, 심층은 UI에서 선택)
+    fields = Settings.model_fields
+    assert fields["llm_model"].default == "gpt-5-mini"
+    assert fields["llm_reasoning_effort"].default == "low"
+    # 선언(llm/options.py)과 응답이 일치해야 한다 — 하드코딩 분산 방지
+    assert body["models"] == options.as_dicts(options.LLM_MODEL_OPTIONS)
+    assert body["efforts"] == options.as_dicts(options.EFFORT_OPTIONS)
 
 
 # -- C5 /api/meta/materials -------------------------------------------------
