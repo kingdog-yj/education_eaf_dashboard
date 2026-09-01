@@ -59,9 +59,21 @@
 - **.env 물리적 차단**: PreToolUse 권한 훅으로 도구 실행 전 거부(.env/.env.* 차단, .env.example 허용, 경로 resolve로 우회 방지). 침투 테스트로 런타임 발화 실증(모델 자체 거절 1차 + 훅 2차 + 허용목록 3차). 잔여 한계: 파이썬 내 동적 경로 조립 — 팀 배포 시 저권한 계정+ACL로 봉쇄 예정(방안 리포트 완료).
 - **편의성**: 응답 완료 시 소요시간 캡션("응답 시간 1m 32s 소요", 우측 하단 옅은 회색), 헤비 연산 사전 동의 안내 굵게 출력. pytest 64건 통과.
 
+### 2026-09-01(별도 브랜치) — `streamlit-snapshot`: Streamlit Cloud 고정 스냅샷
+
+- main과 무관하게 격리된 브랜치. `c59ffe8`(OpenAI 기반, Agent SDK 전환 이전) 기준으로 분기, **향후 main 개발과 무관하게 이 상태로 고정 유지**(사용자 결정). backend/frontend 무수정, `streamlit_app/app.py` 단일 파일로 domain·data·services·llm 계층을 라이브러리 재사용.
+- 4개 뷰 최소 재현 + 채팅에 데이터 조회 tool 3종(query_heat_detail/query_timeseries_stats/query_kpi_trend, search_scholar 제외) OpenAI function-calling 연결 — "N번째 전 히트" 같은 질문도 실데이터로 답변 가능(실호출로 정답 확인됨).
+- 의존성 51개 전이 포함 완전 동결(Python 3.13 기준) — 재빌드로 인한 스냅샷 붕괴 방지.
+- 배포는 사용자가 Streamlit Cloud 콘솔에서 진행(Branch=streamlit-snapshot, Main file path=streamlit_app/app.py, Secrets에 OPENAI_API_KEY).
+
+**발견된 백엔드 버그 (main에도 존재, 별도 이슈로 백로그)**: `backend/app/data/file_repository.py`의 `get_kpi_trend(start, end)` — `end`가 `datetime.fromisoformat("YYYY-MM-DD")`로 자정(00:00:00) 파싱되어 `df["date"] <= end` 필터에서 **해당 날짜 당일 데이터가 통째로 누락**됨(예: `start=end="2026-08-20"` → 실제 20건인데 0건 반환). "최신 N개" 류 조회에서 특히 치명적. 수정 방향: 날짜만 주어진 `end`를 해당 일 23:59:59.999(또는 익일 00:00 미만)로 확장.
+
 ## 2. 향후 계획 작업 명세
 
 각 단계는 CLAUDE.md 에이전트 체계(planner 명세 → 코딩 → verifier)로 수행한다.
+
+### P0(신규, 우선순위 높음). KPI 트렌드 날짜 필터 버그 수정
+- `file_repository.py`의 `get_kpi_trend` — `end` 날짜 파싱을 종료일 23:59:59.999(또는 익일 미만)로 확장. 프론트 TrendView의 기간 필터도 함께 회귀 테스트.
 
 ### P1(잔여). LiveView 실구현
 - `LiveStreamService.stream` 실구현(과거 heat 시계열 실시간 재생, 재생 속도 파라미터) + 프론트 차트 append. 현재는 heartbeat 골격만.
