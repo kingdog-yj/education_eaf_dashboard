@@ -10,6 +10,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+import asyncio  # noqa: E402
+import json  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
 
@@ -29,6 +31,11 @@ from app.domain.materials import (  # noqa: E402
 from app.domain.tags import TAG_REGISTRY  # noqa: E402
 from app.llm.context_builder import ContextBuilder, DashboardContext  # noqa: E402
 from app.llm.options import LLM_MODEL_OPTIONS  # noqa: E402
+from app.llm.tools.data_tools import (  # noqa: E402
+    QueryHeatDetailTool,
+    QueryKpiTrendTool,
+    QueryTimeseriesStatsTool,
+)
 from app.services.heat_service import HeatService  # noqa: E402
 
 DATA_DIR = REPO_ROOT / "data" / "dummy"
@@ -59,10 +66,16 @@ DEFAULT_TREND_METRIC = "kpi_energy_kwh_per_t"
 PERIOD_OPTIONS: dict[str, str] = {"일": "day", "주": "week", "월": "month"}
 
 DEMO_LIMIT_NOTE = (
-    "\n\n---\n\n주의: 이 데모 환경에는 데이터 조회 tool과 웹/학술 검색이 없다. "
-    "위 컨텍스트에 제공된 수치만 실데이터로 인용하고, 추가 조회가 필요한 질문에는 "
-    "이 스냅샷 데모에서 조회 불가함을 밝혀라."
+    "\n\n---\n\n참고: 이 데모는 heat 상세 조회·시계열 통계·KPI 트렌드 조회 tool을 "
+    "사용할 수 있다. 특정 heat나 기간, 순번(예: N번째 전 히트) 질문에는 반드시 tool로 "
+    "실제 데이터를 조회한 뒤 답하라. 최신·순번 질문은 query_kpi_trend를 인자 없이 "
+    "호출해 전체 목록(날짜 오름차순, 마지막이 최신)을 받아 세어라 — start/end는 "
+    "자정 기준으로 해석되어 최신 heat이 누락될 수 있다. "
+    "웹·학술 검색은 이 데모에서 지원하지 않는다."
 )
+
+#: tool 호출 라운드 상한 (무한 루프 방지)
+MAX_TOOL_ROUNDS = 5
 
 st.set_page_config(page_title="EAF 공정 분석 대시보드 (스냅샷)", layout="wide")
 
@@ -71,8 +84,18 @@ st.set_page_config(page_title="EAF 공정 분석 대시보드 (스냅샷)", layo
 
 
 @st.cache_resource
+def get_repository() -> ParquetHeatRepository:
+    """스냅샷 데모의 유일한 리포지토리 인스턴스.
+
+    get_settings()/create_repository()를 거치지 않고 DATA_DIR을 직접 쓴다
+    (이 앱은 .env·config에 의존하지 않는다).
+    """
+    return ParquetHeatRepository(DATA_DIR)
+
+
+@st.cache_resource
 def get_service() -> HeatService:
-    return HeatService(ParquetHeatRepository(DATA_DIR))
+    return HeatService(get_repository())
 
 
 @st.cache_data(show_spinner=False)
@@ -349,7 +372,7 @@ def _mask_secrets(text: str) -> str:
 
 
 def _heat_note(heat_id: str) -> str:
-    """선택된 heat의 핵심 수치 요약 — tool이 없는 데모에서 LLM의 유일한 실데이터."""
+    """선택된 heat의 핵심 수치 요약 — tool 호출 전 LLM에 주는 화면 컨텍스트 힌트."""
     try:
         heat = get_service().get_heat(heat_id)
     except HeatNotFoundError:
@@ -396,14 +419,71 @@ def _heat_note(heat_id: str) -> str:
     return " / ".join(lines)
 
 
-def _stream_text(stream):
-    for chunk in stream:
-        choices = getattr(chunk, "choices", None)
-        if not choices:
+@st.cache_resource
+def get_chat_tools() -> list:
+    """채팅용 데이터 조회 tool 3종 (웹/학술 검색은 이 데모에서 제외).
+
+    create_default_tools()는 get_settings()에 의존하므로 쓰지 않고,
+    캐시된 리포지토리를 재사용해 수동 생성한다.
+    """
+    repo = get_repository()
+    return [QueryHeatDetailTool(repo), QueryTimeseriesStatsTool(repo), QueryKpiTrendTool(repo)]
+
+
+def _tool_schemas() -> list[dict]:
+    """DiscussionTool 선언 → OpenAI function-calling 스키마."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters_schema,
+            },
+        }
+        for t in get_chat_tools()
+    ]
+
+
+def _run_tool(name: str, arguments_json: str) -> str:
+    """tool 1회 실행. 실패는 예외 대신 JSON 오류 문자열로 LLM에 돌려준다."""
+    tools_by_name = {t.name: t for t in get_chat_tools()}
+    tool = tools_by_name.get(name)
+    if tool is None:
+        return json.dumps({"error": f"알 수 없는 tool: {name}"}, ensure_ascii=False)
+    try:
+        kwargs = json.loads(arguments_json or "{}")
+        return asyncio.run(tool.run(**kwargs))
+    except Exception as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
+
+
+def _chat_completion_loop(client, system_prompt: str, history: list[dict]) -> str:
+    """tool 호출 라운드를 돌고 최종 답변 텍스트를 반환."""
+    messages = [{"role": "system", "content": system_prompt}, *history]
+    for _ in range(MAX_TOOL_ROUNDS):
+        resp = client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages,
+            tools=_tool_schemas(),
+        )
+        choice = resp.choices[0]
+        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            messages.append(choice.message.model_dump(exclude_none=True))
+            with st.spinner("데이터 조회 중..."):
+                for call in choice.message.tool_calls:
+                    st.caption(f"🔎 {call.function.name} 조회 중")
+                    result = _run_tool(call.function.name, call.function.arguments)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": result,
+                        }
+                    )
             continue
-        content = getattr(choices[0].delta, "content", None)
-        if content:
-            yield content
+        return choice.message.content or ""
+    return "도구 호출이 너무 많아 답변을 완성하지 못했습니다. 질문을 더 구체적으로 나눠 다시 시도해 주세요."
 
 
 def render_chat(view_id: str, heat_id: str | None) -> None:
@@ -445,15 +525,9 @@ def render_chat(view_id: str, heat_id: str | None) -> None:
             from openai import OpenAI
 
             client = OpenAI(api_key=key)
-            stream = client.chat.completions.create(
-                model=CHAT_MODEL,
-                messages=[{"role": "system", "content": system_prompt}, *messages],
-                stream=True,
-            )
-            answer = st.write_stream(_stream_text(stream))
-            if isinstance(answer, list):
-                answer = "".join(str(part) for part in answer)
-            messages.append({"role": "assistant", "content": answer or ""})
+            answer = _chat_completion_loop(client, system_prompt, list(messages))
+            st.markdown(answer)
+            messages.append({"role": "assistant", "content": answer})
         except Exception as exc:  # 채팅 실패가 대시보드를 죽이지 않는다
             st.error(f"LLM 호출 실패: {_mask_secrets(str(exc))}")
 
