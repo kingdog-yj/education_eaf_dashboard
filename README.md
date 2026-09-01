@@ -24,10 +24,11 @@ cd education_eaf_dashboard
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 
-# 2) 프론트엔드
-cd frontend && npm install && cd ..
+# 2) 프론트엔드 (run.bat 단일 포트 실행을 위해 빌드까지)
+cd frontend && npm install && npm run build && cd ..
 
-# 3) 환경 변수 — .env.example을 .env로 복사 후 실제 키 입력 (.env는 커밋되지 않음)
+# 3) 환경 변수 — .env.example을 .env로 복사 (.env는 커밋되지 않음)
+#    채팅(Claude Agent SDK) 인증: ANTHROPIC_API_KEY 등록 또는 해당 PC의 Claude Code 로그인
 cp .env.example .env
 ```
 

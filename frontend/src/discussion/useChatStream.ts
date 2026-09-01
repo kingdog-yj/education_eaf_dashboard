@@ -1,6 +1,6 @@
 // POST /api/discussion 의 SSE 스트림을 파싱해 chatStore에 반영하는 훅.
 import { useCallback, useRef } from "react";
-import type { StreamEvent } from "../api/types";
+import type { ChatMessage, StreamEvent } from "../api/types";
 import { useChatStore } from "../state/chatStore";
 import { useDashboardContext } from "../state/dashboardContext";
 
@@ -18,7 +18,12 @@ export function useChatStream() {
     async (content: string) => {
       chat.addUserMessage(content);
       const state = useChatStore.getState(); // addUserMessage 반영 후 최신 상태
-      const messages = [...state.messages];
+      // API 계약(ChatMessage)에 맞춰 role/content만 전송한다.
+      // UI 전용 필드(durationS 등)는 백엔드로 나가지 않게 여기서 제거한다.
+      const messages: ChatMessage[] = state.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
       // 대화 모드는 전송 시점의 스토어 값을 그대로 보낸다(null=서버 기본값 quick).
       const mode = state.mode;
 

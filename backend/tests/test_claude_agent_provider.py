@@ -15,7 +15,7 @@ from claude_agent_sdk.types import (
 )
 from claude_agent_sdk.types import StreamEvent as SdkStreamEvent
 
-from app.config import Settings
+from app.config import PROJECT_ROOT, Settings
 from app.llm import claude_agent_provider as prov
 from app.llm import modes
 from app.llm.base import ChatMessage, StreamEventType
@@ -249,6 +249,66 @@ def test_build_options_uses_api_key_when_configured():
         "SYSTEM", modes.resolve_mode("quick"), Settings(anthropic_api_key="test-key")
     )
     assert options.env["ANTHROPIC_API_KEY"] == "test-key"
+
+
+def test_build_options_registers_env_guard_hook():
+    for mode_id in ("quick", "deep"):
+        options = _options(mode_id)
+        matchers = options.hooks["PreToolUse"]
+        assert any(prov._env_guard_hook in m.hooks for m in matchers)
+
+
+# -- .env 접근 차단 (PreToolUse 훅 로직) --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tool_name,tool_input",
+    [
+        ("Read", {"file_path": ".env"}),
+        ("Read", {"file_path": "backend/../.env"}),
+        ("Read", {"file_path": str(PROJECT_ROOT / ".env")}),
+        ("Read", {"file_path": ".env.local"}),
+        ("Read", {"file_path": "C:/somewhere/else/.env"}),
+        ("Grep", {"pattern": "KEY", "path": ".env"}),
+        ("Grep", {"pattern": ".env"}),
+        ("Glob", {"pattern": "**/.env"}),
+        ("Bash", {"command": "cat .env"}),
+        ("Bash", {"command": ".venv/Scripts/python.exe -c \"print(open('.env').read())\""}),
+    ],
+)
+def test_env_guard_denies(tool_name, tool_input):
+    assert prov._env_guard_decision(tool_name, tool_input) == prov.SENSITIVE_DENY_MESSAGE
+
+
+@pytest.mark.parametrize(
+    "tool_name,tool_input",
+    [
+        ("Read", {"file_path": ".env.example"}),
+        ("Read", {"file_path": "DOMAIN_INFO.md"}),
+        ("Read", {"file_path": str(PROJECT_ROOT / "SPEC.md")}),
+        ("Grep", {"pattern": "active_power", "path": "backend/app"}),
+        ("Glob", {"pattern": "data/dummy/**/*.parquet"}),
+        ("Bash", {"command": ".venv/Scripts/python.exe -c \"import pandas\""}),
+    ],
+)
+def test_env_guard_allows(tool_name, tool_input):
+    assert prov._env_guard_decision(tool_name, tool_input) is None
+
+
+@pytest.mark.asyncio
+async def test_env_guard_hook_output_shape():
+    denied = await prov._env_guard_hook(
+        {"tool_name": "Read", "tool_input": {"file_path": ".env"}}, "tu_1", {}
+    )
+    assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert denied["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+    assert denied["hookSpecificOutput"]["permissionDecisionReason"] == (
+        prov.SENSITIVE_DENY_MESSAGE
+    )
+    allowed = await prov._env_guard_hook(
+        {"tool_name": "Read", "tool_input": {"file_path": "SPEC.md"}}, "tu_2", {}
+    )
+    assert allowed == {}
 
 
 # -- 시스템 프롬프트 길이 폴백 -----------------------------------------------

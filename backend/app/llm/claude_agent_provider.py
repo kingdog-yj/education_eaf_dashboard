@@ -15,7 +15,9 @@ import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from claude_agent_sdk import ClaudeAgentOptions, query
+from typing import Any
+
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
 from claude_agent_sdk.types import (
     AssistantMessage,
     ResultMessage,
@@ -46,6 +48,94 @@ SKIP_HISTORY_ENV = "CLAUDE_CODE_SKIP_PROMPT_HISTORY"
 _TOOL_USE_BLOCK_TYPES = frozenset({"tool_use", "server_tool_use"})
 
 _ROLE_LABELS = {"user": "[사용자]", "assistant": "[어시스턴트]"}
+
+
+# -- .env 접근 차단 (권한 계층) ----------------------------------------------
+# 프로젝트 읽기는 의도적으로 비격리(작업 디렉토리 = 프로젝트 루트)이지만,
+# 자격증명이 담긴 .env만은 프롬프트 지침이 아니라 권한 계층에서 물리적으로 막는다.
+# 아래 상수가 차단 규칙의 유일한 선언 지점이다.
+#
+# 메커니즘: PreToolUse 훅.
+#   `can_use_tool` 콜백은 allowed_tools에 통째로 승인된 도구(Read/Grep/Glob 등)에는
+#   호출되지 않는다(SDK 0.2.149 `_get_can_use_tool_shadowed_warning` 참조 — "To gate
+#   every tool call, use a PreToolUse hook"). 두 모드 공통으로 모든 도구 호출을
+#   가로채야 하므로 PreToolUse 훅을 사용한다.
+
+#: 정확히 이 파일명이면 차단 (디렉토리 위치 무관).
+SENSITIVE_ENV_FILENAME = ".env"
+#: `.env.local`, `.env.production` 등 파생 파일도 차단.
+SENSITIVE_ENV_PREFIX = ".env."
+#: 민감정보가 없는 예시 파일만 예외로 허용.
+SENSITIVE_ENV_ALLOWED = frozenset({".env.example"})
+#: 경로 인자로 취급하는 도구 입력 키 (resolve 후 파일명 비교).
+SENSITIVE_PATH_KEYS = ("file_path", "path", "notebook_path", "file", "directory")
+#: 패턴 인자로 취급하는 키 (문자열에 .env 토큰이 있으면 차단 — 보수적).
+SENSITIVE_PATTERN_KEYS = ("pattern", "glob", "globs", "query")
+#: 셸 명령은 문자열 전체를 토큰 검사한다(보수적 — .env.example 언급도 함께 거부됨).
+SENSITIVE_COMMAND_KEYS = ("command",)
+
+SENSITIVE_DENY_MESSAGE = "보안 정책: .env 파일 접근은 차단되어 있습니다."
+
+
+def _is_sensitive_path(value: str) -> bool:
+    """경로 문자열이 .env 계열 파일을 가리키는가.
+
+    상대경로(`../.env`, `backend/../.env`)로 우회하지 못하도록 프로젝트 루트를
+    기준으로 resolve한 뒤 파일명만 비교한다.
+    """
+    text = value.strip().strip("'\"")
+    if not text:
+        return False
+    try:
+        name = (PROJECT_ROOT / text).resolve().name
+    except (OSError, ValueError):
+        name = Path(text).name
+    return _is_sensitive_name(name)
+
+
+def _is_sensitive_name(name: str) -> bool:
+    if name in SENSITIVE_ENV_ALLOWED:
+        return False
+    return name == SENSITIVE_ENV_FILENAME or name.startswith(SENSITIVE_ENV_PREFIX)
+
+
+def _has_sensitive_token(value: str) -> bool:
+    """패턴/명령 문자열에 .env 토큰이 있는가(허용 예시 파일 언급은 제외하지 않음)."""
+    return SENSITIVE_ENV_FILENAME in value
+
+
+def _env_guard_decision(tool_name: str, tool_input: dict[str, Any]) -> str | None:
+    """차단해야 하면 거부 사유, 아니면 None. (훅에서 분리 — 단위 테스트 대상)"""
+    if not isinstance(tool_input, dict):
+        return None
+    for key, value in tool_input.items():
+        if not isinstance(value, str):
+            continue
+        if key in SENSITIVE_COMMAND_KEYS and _has_sensitive_token(value):
+            return SENSITIVE_DENY_MESSAGE
+        if key in SENSITIVE_PATTERN_KEYS and _has_sensitive_token(value):
+            return SENSITIVE_DENY_MESSAGE
+        if key in SENSITIVE_PATH_KEYS and _is_sensitive_path(value):
+            return SENSITIVE_DENY_MESSAGE
+    return None
+
+
+async def _env_guard_hook(
+    hook_input: dict, tool_use_id: str | None, context: object
+) -> dict:
+    """PreToolUse 훅 — .env 접근 시도를 실행 전에 거부한다."""
+    reason = _env_guard_decision(
+        hook_input.get("tool_name") or "", hook_input.get("tool_input") or {}
+    )
+    if reason is None:
+        return {}                       # 결정 없음 → 기존 권한 정책으로 진행
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
 
 
 class ClaudeAgentProvider(LLMProvider):
@@ -219,6 +309,8 @@ def _build_options(
         # 개발용 CLAUDE.md/설정이 채팅 페르소나를 오염시키지 않도록 차단한다.
         setting_sources=[],
         include_partial_messages=True,
+        # .env 접근은 프롬프트 지침이 아니라 권한 계층에서 막는다(두 모드 공통).
+        hooks={"PreToolUse": [HookMatcher(hooks=[_env_guard_hook])]},
         env=_build_env(settings),
         **extra,
     )

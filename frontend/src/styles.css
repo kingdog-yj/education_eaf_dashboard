@@ -28,6 +28,7 @@
   --text-title-alt: #242424;
   --text-body: #333333;
   --text-muted: #475569;
+  --text-faint: rgba(0, 0, 0, 0.35); /* 보조 텍스트보다 옅은 캡션(메타 정보)용 */
 
   /* 데이터 표현 전용 확장 (UI 크롬에 사용 금지) */
   --danger: #d13438;
@@ -698,6 +699,15 @@ input[type="date"]:hover {
   background: var(--surface-card);
   border: 1px solid var(--border);
   color: var(--text-body);
+}
+
+/* 응답 소요시간 캡션 (완료된 assistant 말풍선 우측 하단) */
+.msg-duration {
+  margin-top: 2px;
+  text-align: right;
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  color: var(--text-faint);
 }
 
 /* 마크다운 본문 */

@@ -1,6 +1,6 @@
 // Discussion 대화 상태 — 휘발성(서버 미저장). 브라우저 세션 동안만 유지.
 import { create } from "zustand";
-import type { ChatMessage, ChatMode } from "../api/types";
+import type { ChatMode, UiChatMessage } from "../api/types";
 
 export interface Citation {
   url: string;
@@ -8,8 +8,10 @@ export interface Citation {
 }
 
 interface ChatState {
-  messages: ChatMessage[];
+  messages: UiChatMessage[];
   streamingText: string; // 수신 중인 assistant 응답
+  /** 현재 응답 스트림 시작 시각(ms). 완료 시 소요시간 산출용. 미진행이면 null. */
+  streamStartedAt: number | null;
   activeTool: string | null; // 실행 중인 tool 이름 (UI 표시)
   /** 현재 응답에서 실행 완료된 tool 이름 목록. tool_call→tool_result 간격이
    *  매우 짧아 activeTool만으로는 화면에 남지 않으므로 이력으로 누적한다. */
@@ -31,6 +33,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   streamingText: "",
+  streamStartedAt: null,
   activeTool: null,
   toolHistory: [],
   citations: [],
@@ -41,6 +44,7 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => ({
       messages: [...s.messages, { role: "user", content }],
       streamingText: "",
+      streamStartedAt: Date.now(),
       activeTool: null,
       toolHistory: [],
       citations: [],
@@ -58,18 +62,34 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
   addCitation: (c) => set((s) => ({ citations: [...s.citations, c] })),
   finishStreaming: () =>
-    set((s) => ({
-      messages: s.streamingText
-        ? [...s.messages, { role: "assistant", content: s.streamingText }]
-        : s.messages,
-      streamingText: "",
-      activeTool: null,
-      isStreaming: false,
-    })),
+    set((s) => {
+      // 중단된 응답에도 그 시점까지의 소요시간을 부여한다.
+      const durationS =
+        s.streamStartedAt !== null
+          ? (Date.now() - s.streamStartedAt) / 1000
+          : undefined;
+      return {
+        messages: s.streamingText
+          ? [
+              ...s.messages,
+              {
+                role: "assistant" as const,
+                content: s.streamingText,
+                ...(durationS !== undefined ? { durationS } : {}),
+              },
+            ]
+          : s.messages,
+        streamingText: "",
+        streamStartedAt: null,
+        activeTool: null,
+        isStreaming: false,
+      };
+    }),
   clear: () =>
     set({
       messages: [],
       streamingText: "",
+      streamStartedAt: null,
       activeTool: null,
       toolHistory: [],
       citations: [],

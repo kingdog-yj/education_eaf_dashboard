@@ -36,6 +36,13 @@ const TOOL_LABELS: Record<string, string> = {
 
 const toolLabel = (name: string) => TOOL_LABELS[name] ?? name;
 
+/** 응답 소요시간 표기. 60초 미만은 "42s", 이상은 "1m 32s". */
+function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total}s`;
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
 export function DiscussionPanel() {
   const {
     messages,
@@ -180,6 +187,11 @@ export function DiscussionPanel() {
           ) : (
             <div key={i} className="msg msg-assistant markdown">
               <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+              {m.durationS !== undefined && (
+                <div className="msg-duration">
+                  응답 시간 {formatDuration(m.durationS)} 소요
+                </div>
+              )}
             </div>
           ),
         )}

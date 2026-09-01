@@ -125,6 +125,11 @@ export interface ChatMessage {
   content: string;
 }
 
+/** UI 전용 메시지 타입 — API 계약(ChatMessage)과 분리된다.
+ *  durationS 등 부가 필드는 프론트 표시용이며 백엔드로 전송하지 않는다
+ *  (useChatStream에서 role/content만 추출해 전송). */
+export type UiChatMessage = ChatMessage & { durationS?: number };
+
 export type StreamEventType =
   | "text_delta"
   | "tool_call"
