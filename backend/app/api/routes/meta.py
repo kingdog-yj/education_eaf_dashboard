@@ -1,12 +1,11 @@
 """메타 정보 — 프론트가 차트/필터를 TagRegistry 선언 기반으로 구성하게 한다."""
 from fastapi import APIRouter
 
-from app.config import get_settings
 from app.domain import specs
 from app.domain.materials import ADDITION_MATERIALS, SCRAP_GRADES, STEEL_GROUPS
 from app.domain.phases import HeatPhase
 from app.domain.tags import TAG_REGISTRY
-from app.llm import options
+from app.llm import modes
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 
@@ -31,20 +30,10 @@ def list_phases():
     return [{"id": p.value, "label_ko": p.label_ko} for p in HeatPhase]
 
 
-@router.get("/llm")
-def llm_options():
-    """채팅에서 선택 가능한 모델/reasoning 강도 + 서버 기본값.
-
-    선택지는 llm/options.py, 기본값은 설정(.env)에서 온다. 기본값이 선택지에
-    없더라도 목록은 그대로 두고 default만 설정값을 반환한다.
-    """
-    settings = get_settings()
-    return {
-        "models": options.as_dicts(options.LLM_MODEL_OPTIONS),
-        "efforts": options.as_dicts(options.EFFORT_OPTIONS),
-        "default_model": settings.llm_model,
-        "default_effort": settings.llm_reasoning_effort,
-    }
+@router.get("/chat_modes")
+def chat_modes():
+    """Discussion 채팅 모드 선택지 + 기본값 (선언은 llm/modes.py)."""
+    return {"modes": modes.as_dicts(), "default_mode": modes.DEFAULT_MODE_ID}
 
 
 @router.get("/specs")

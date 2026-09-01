@@ -2,12 +2,12 @@
 
 프론트의 dashboardContext store가 보내는 화면 상태를 LLM 컨텍스트로 변환한다.
 도메인 지식(DOMAIN_INFO.md)은 매 요청 시스템 프롬프트에 포함한다 (지속 업데이트 반영).
+모드별 지침(빠른 대화 / 심화 분석)은 llm/modes.py 선언을 받아 마지막 블록에 붙인다.
 """
-from pathlib import Path
-
 from pydantic import BaseModel
 
 from app.config import PROJECT_ROOT
+from app.llm.modes import VENV_PYTHON, ChatModeSpec
 
 DOMAIN_INFO_PATH = PROJECT_ROOT / "DOMAIN_INFO.md"
 
@@ -25,10 +25,53 @@ PERSONA = """\
 - 정량 우선: 주장마다 tool로 조회한 실데이터 수치를 인용한다. 추측을 데이터처럼 말하지 않는다.
 - 디스커션 스타일: 한 번에 모든 논점을 늘어놓지 말고, 가장 중요한 논점 1~2개를 제시한 뒤
   필요하면 확인 질문 하나로 끝낸다.
-- 문헌 근거가 필요하면 웹 검색/학술 검색(search_scholar)을 사용하고 출처를 밝힌다.
+- 문헌 근거가 필요하면 웹 검색(WebSearch)/웹 문서 확인(WebFetch)을 사용하고 출처를 밝힌다.
 - 도메인 용어는 한국어(영문 병기).
 - 사용자가 현재 대시보드에서 보고 있는 컨텍스트(아래)를 대화의 기본 전제로 삼는다.
 """
+
+COMPUTE_POLICY = """\
+# 연산 정책 (반드시 준수)
+- 이 채팅 세션은 가볍게 유지한다. 헤비한 개발성 코드 실행은 금지한다.
+- 값 확인·트렌드 확인은 데이터 읽기만으로 대응한다. 집계(합계/평균) 요청은 가벼운
+  코드 실행을 허용한다. 간단한 선형회귀(회귀식·R² 산출) 수준까지 허용한다.
+- 그 이상의 명시적으로 헤비한 연산(다변량 모델링, 대량 반복 계산, 전체 heat 전수
+  시뮬레이션 등)이 필요한 요청이면, 실행 전에 반드시 사용자에게 다음과 같이 묻고
+  진행 의사를 응답받은 후에만 진행한다:
+  "이 작업은 내부적으로 스크립트 작성·계산·검증을 거쳐야 하므로 응답이 상당히
+  오래 걸릴 수 있습니다. 오래 걸리더라도 객관적으로 확인된 결론을 원하시면
+  진행하겠습니다. 진행할까요?"
+- 코드/스크립트 파일이 필요하면 프로젝트 루트의 .chat_tmp/ 아래에만 생성한다
+  (파이썬 코드로 생성). 프로젝트 소스 파일은 절대 수정하지 않는다.
+"""
+
+#: 심화 분석 모드 전용 — 도구로 무엇을 어디서 확인할지.
+PROJECT_GUIDE = f"""\
+# 프로젝트 탐색 가이드
+- 작업 디렉토리는 이 대시보드 프로젝트의 루트다. 필요하면 직접 파일을 확인하라:
+  - SPEC.md: 대시보드/데이터 명세 · docs/: 작업 이력과 계획
+  - backend/app/domain, backend/app/data: 데이터 모델·태그·스펙 정의 코드
+  - data/dummy/heats.parquet: heat 단위 정적 데이터(장입/KPI/종점/슬래그, ~500 heat)
+  - data/dummy/additions.parquet: 부원료 투입 이벤트
+  - data/dummy/timeseries/<heat_id>.parquet: heat별 1초 시계열(active_power 등)
+- 파이썬 실행은 반드시 `{VENV_PYTHON} ...` 로만 한다(pandas/pyarrow 사용
+  가능). 다른 셸 명령은 권한 정책상 거부된다.
+- 웹/문헌 확인은 WebSearch/WebFetch를 사용하고 본문에 출처 링크를 남긴다.
+"""
+
+#: 빠른 대화 모드 전용 — 도구가 없는 상태에서의 응답 규칙.
+QUICK_GUIDE = """\
+# 응답 지침 (빠른 대화 모드)
+- 도구 없이, 위 도메인 지식과 화면 컨텍스트만으로 즉시 답한다.
+- 실데이터 조회·파일 확인·계산이 필요한 질문이면 추측하지 말고, "심화 분석 모드로
+  전환해 다시 질문해 달라"고 한 문장으로 안내한다.
+"""
+
+#: 모드 id → 시스템 프롬프트 말미에 붙일 블록들. 모드 추가는 modes.py + 여기 한 줄.
+MODE_GUIDES: dict[str, tuple[str, ...]] = {
+    "quick": (QUICK_GUIDE,),
+    "deep": (PROJECT_GUIDE, COMPUTE_POLICY),
+}
 
 
 class DashboardContext(BaseModel):
@@ -42,10 +85,13 @@ class DashboardContext(BaseModel):
 
 
 class ContextBuilder:
-    def build_system_prompt(self, ctx: DashboardContext | None) -> str:
+    def build_system_prompt(
+        self, ctx: DashboardContext | None, mode: ChatModeSpec
+    ) -> str:
         parts = [PERSONA, self._domain_info()]
         if ctx:
             parts.append(self._render_context(ctx))
+        parts.extend(MODE_GUIDES.get(mode.id, ()))
         return "\n\n---\n\n".join(parts)
 
     @staticmethod

@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../api/client";
-import type { LlmMeta } from "../api/types";
+import type { ChatModesMeta } from "../api/types";
 import { useChatStore } from "../state/chatStore";
 import { useDashboardContext } from "../state/dashboardContext";
 import { useChatStream } from "./useChatStream";
@@ -24,6 +24,18 @@ const VIEW_LABELS: Record<string, string> = {
 /** 이 시간(초)을 넘기면 지연 안내 문구를 덧붙인다. */
 const SLOW_HINT_SEC = 20;
 
+/** LLM 도구명 한국어 병기. 미지 도구는 원문 그대로 표시한다. */
+const TOOL_LABELS: Record<string, string> = {
+  Read: "파일 읽기 (Read)",
+  Grep: "본문 검색 (Grep)",
+  Glob: "파일 탐색 (Glob)",
+  Bash: "파이썬 분석 (Bash)",
+  WebSearch: "웹 검색 (WebSearch)",
+  WebFetch: "웹 문서 확인 (WebFetch)",
+};
+
+const toolLabel = (name: string) => TOOL_LABELS[name] ?? name;
+
 export function DiscussionPanel() {
   const {
     messages,
@@ -34,11 +46,9 @@ export function DiscussionPanel() {
     isStreaming,
     clear,
   } = useChatStore();
-  const model = useChatStore((s) => s.model);
-  const reasoningEffort = useChatStore((s) => s.reasoningEffort);
-  const setModel = useChatStore((s) => s.setModel);
-  const setReasoningEffort = useChatStore((s) => s.setReasoningEffort);
-  const [llmMeta, setLlmMeta] = useState<LlmMeta | null>(null);
+  const mode = useChatStore((s) => s.mode);
+  const setMode = useChatStore((s) => s.setMode);
+  const [modesMeta, setModesMeta] = useState<ChatModesMeta | null>(null);
   const heatId = useDashboardContext((s) => s.heatId);
   const view = useDashboardContext((s) => s.view);
   const { send, abort } = useChatStream();
@@ -60,18 +70,17 @@ export function DiscussionPanel() {
     return () => window.clearInterval(id);
   }, [isStreaming]);
 
-  // 모델·추론 강도 선택지. 백엔드가 아직 /api/meta/llm을 제공하지 않으면
-  // 드롭다운을 숨기고 서버 기본값으로만 동작한다(채팅 기능에는 영향 없음).
+  // 대화 모드 선택지. 백엔드가 아직 /api/meta/chat_modes를 제공하지 않으면
+  // 컨트롤을 숨기고 서버 기본값으로만 동작한다(채팅 기능에는 영향 없음).
   useEffect(() => {
     let alive = true;
     api
-      .getLlmMeta()
+      .getChatModes()
       .then((meta) => {
         if (!alive) return;
-        setLlmMeta(meta);
+        setModesMeta(meta);
         const s = useChatStore.getState();
-        if (s.model === null) s.setModel(meta.default_model);
-        if (s.reasoningEffort === null) s.setReasoningEffort(meta.default_effort);
+        if (s.mode === null) s.setMode(meta.default_mode);
       })
       .catch(() => {
         /* 미지원 백엔드 — 조용히 무시 */
@@ -125,35 +134,30 @@ export function DiscussionPanel() {
           초기화
         </button>
 
-        {llmMeta && (
-          <div
-            className="llm-controls"
-            title="모델과 추론 강도(reasoning effort)를 높일수록 분석은 깊어지지만 응답은 느려집니다. 변경은 다음 전송부터 적용됩니다."
-          >
-            <select
-              aria-label="LLM 모델"
-              value={model ?? llmMeta.default_model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              {llmMeta.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label_ko}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="추론 강도 (reasoning effort)"
-              value={reasoningEffort ?? llmMeta.default_effort}
-              onChange={(e) => setReasoningEffort(e.target.value)}
-            >
-              {llmMeta.efforts.map((f) => (
-                <option key={f.id} value={f.id}>
-                  추론 {f.label_ko}
-                </option>
-              ))}
-            </select>
-            <span className="llm-hint">
-              빠른 응답 ↔ 심층 분석 트레이드오프 · 다음 전송부터 적용
+        {modesMeta && (
+          <div className="mode-controls">
+            <div className="mode-seg" role="radiogroup" aria-label="대화 모드">
+              {modesMeta.modes.map((m) => {
+                const selected = (mode ?? modesMeta.default_mode) === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={selected ? "selected" : undefined}
+                    title={m.description_ko}
+                    onClick={() => setMode(m.id)}
+                  >
+                    {m.label_ko}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="mode-hint">
+              {modesMeta.modes.find((m) => m.id === (mode ?? modesMeta.default_mode))
+                ?.description_ko}{" "}
+              · 다음 전송부터 적용
             </span>
           </div>
         )}
@@ -192,13 +196,13 @@ export function DiscussionPanel() {
           <div className="tool-chips">
             {toolHistory.map((name) => (
               <span key={name} className="tool-chip done">
-                {name} 조회 완료
+                {toolLabel(name)} 완료
               </span>
             ))}
             {activeTool && (
               <span className="tool-chip">
                 <span className="spinner" aria-hidden="true" />
-                {activeTool} 조회 중…
+                {toolLabel(activeTool)} 실행 중…
               </span>
             )}
           </div>
@@ -212,7 +216,7 @@ export function DiscussionPanel() {
               <i />
             </span>
             <span>
-              {activeTool ? `${activeTool} 조회 중` : "응답 생성 중"}
+              {activeTool ? `${toolLabel(activeTool)} 실행 중` : "응답 생성 중"}
               <span className="pending-timer"> {elapsed}초 경과</span>
             </span>
             {elapsed >= SLOW_HINT_SEC && (

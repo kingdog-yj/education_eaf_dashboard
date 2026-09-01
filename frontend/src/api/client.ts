@@ -1,12 +1,12 @@
 // REST API 클라이언트. 모든 fetch는 여기로 모은다 (엔드포인트 하드코딩 분산 금지).
 import type {
   AdditionEvent,
+  ChatModesMeta,
   Heat,
   HeatSummary,
   HeatTimeseries,
   KpiSummaryResponse,
   KpiTrendRow,
-  LlmMeta,
   MaterialsMeta,
   MetricSpec,
   PhaseInterval,
@@ -70,6 +70,6 @@ export const api = {
   getPhases: () => getMeta<PhaseMeta[]>("/api/meta/phases"),
   getSpecs: () => getMeta<MetricSpec[]>("/api/meta/specs"),
   getMaterials: () => getMeta<MaterialsMeta>("/api/meta/materials"),
-  /** Discussion용 LLM 모델·추론 강도 선택지. 미지원 백엔드에서는 reject된다. */
-  getLlmMeta: () => getMeta<LlmMeta>("/api/meta/llm"),
+  /** Discussion 대화 모드 선택지. 미지원 백엔드에서는 reject된다. */
+  getChatModes: () => getMeta<ChatModesMeta>("/api/meta/chat_modes"),
 };

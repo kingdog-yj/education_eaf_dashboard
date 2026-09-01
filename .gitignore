@@ -19,6 +19,9 @@ frontend/dist/
 # 향후 실데이터 연결 시 아래 제외 규칙을 반드시 복원할 것:
 # data/dummy/**
 
+# Discussion 심화 모드가 생성하는 임시 분석 스크립트
+.chat_tmp/
+
 # IDE / OS
 .vscode/
 .idea/

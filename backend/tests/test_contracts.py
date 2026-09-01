@@ -1,15 +1,15 @@
 """대시보드 v1 API 계약 테스트 (docs/plans/dashboard-v1.md §3).
 
-LLM 실호출은 비용 때문에 테스트하지 않는다 (scripts/smoke_openai.py로만 확인).
+LLM 실호출은 비용 때문에 테스트하지 않는다 (scripts/smoke_claude_agent.py로만 확인).
 """
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.domain import specs
 from app.domain.materials import ADDITION_MATERIALS, SCRAP_GRADES, STEEL_GROUPS
 from app.domain.phases import HeatPhase
-from app.llm import options
+from app.llm import modes
 from app.main import app
 
 client = TestClient(app)
@@ -77,27 +77,21 @@ def test_is_out_of_spec_rules():
     assert not specs.is_out_of_spec({"kpi_o2_nm3_per_t": 99999.0})
 
 
-# -- /api/meta/llm ----------------------------------------------------------
+# -- /api/meta/chat_modes ---------------------------------------------------
 
 
-def test_meta_llm_contract():
-    body = client.get("/api/meta/llm").json()
-    assert set(body) == {"models", "efforts", "default_model", "default_effort"}
-    assert [m["id"] for m in body["models"]] == ["gpt-5-mini", "gpt-5", "gpt-5-nano"]
-    assert [e["id"] for e in body["efforts"]] == ["minimal", "low", "medium", "high"]
-    for item in body["models"] + body["efforts"]:
-        assert set(item) == {"id", "label_ko"}
-        assert item["label_ko"]
-    # 기본값은 설정에서 온다 (.env가 덮어쓸 수 있음)
-    assert body["default_model"] == get_settings().llm_model
-    assert body["default_effort"] == get_settings().llm_reasoning_effort
-    # 코드상 기본값은 사용자 확정값 (빠른 응답이 기본, 심층은 UI에서 선택)
-    fields = Settings.model_fields
-    assert fields["llm_model"].default == "gpt-5-mini"
-    assert fields["llm_reasoning_effort"].default == "low"
-    # 선언(llm/options.py)과 응답이 일치해야 한다 — 하드코딩 분산 방지
-    assert body["models"] == options.as_dicts(options.LLM_MODEL_OPTIONS)
-    assert body["efforts"] == options.as_dicts(options.EFFORT_OPTIONS)
+def test_meta_chat_modes_contract():
+    resp = client.get("/api/meta/chat_modes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {"modes", "default_mode"}
+    assert [m["id"] for m in body["modes"]] == ["quick", "deep"]
+    for item in body["modes"]:
+        assert set(item) == {"id", "label_ko", "description_ko"}
+        assert item["label_ko"] and item["description_ko"]
+    assert body["default_mode"] == "quick"
+    # 선언(llm/modes.py)과 응답이 일치해야 한다 — 하드코딩 분산 방지
+    assert body["modes"] == modes.as_dicts()
 
 
 # -- C5 /api/meta/materials -------------------------------------------------

@@ -19,9 +19,8 @@ export function useChatStream() {
       chat.addUserMessage(content);
       const state = useChatStore.getState(); // addUserMessage 반영 후 최신 상태
       const messages = [...state.messages];
-      // 모델·추론 강도는 전송 시점의 스토어 값을 그대로 보낸다(null=서버 기본값).
-      const model = state.model;
-      const reasoningEffort = state.reasoningEffort;
+      // 대화 모드는 전송 시점의 스토어 값을 그대로 보낸다(null=서버 기본값 quick).
+      const mode = state.mode;
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -33,8 +32,7 @@ export function useChatStream() {
           body: JSON.stringify({
             messages,
             context: toPayload(),
-            model,
-            reasoning_effort: reasoningEffort,
+            mode,
           }),
           signal: controller.signal,
         });

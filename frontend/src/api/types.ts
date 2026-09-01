@@ -141,12 +141,19 @@ export interface StreamEvent {
   title: string;
 }
 
-/** LLM 모델/추론 강도(reasoning effort) 선택지 메타. GET /api/meta/llm */
-export interface LlmMeta {
-  models: { id: string; label_ko: string }[];
-  efforts: { id: string; label_ko: string }[];
-  default_model: string;
-  default_effort: string;
+/** 대화 모드. quick=빠른 대화, deep=심화 분석. */
+export type ChatMode = "quick" | "deep";
+
+export interface ChatModeInfo {
+  id: ChatMode;
+  label_ko: string;
+  description_ko: string;
+}
+
+/** 대화 모드 선택지 메타. GET /api/meta/chat_modes */
+export interface ChatModesMeta {
+  modes: ChatModeInfo[];
+  default_mode: ChatMode;
 }
 
 export interface DashboardContextPayload {

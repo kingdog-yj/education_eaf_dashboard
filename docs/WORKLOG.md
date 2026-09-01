@@ -45,6 +45,14 @@
 - **수정**: ① 대기 인디케이터(경과 초·점 애니메이션·20초 지연 안내)+tool 실행 칩+응답 중단 버튼 ② SSE 하트비트(15초 무이벤트 시 ": ping" — 유휴 끊김 예방) ③ `GET /api/meta/llm` + `DiscussionRequest.model/reasoning_effort` 요청 단위 오버라이드(선택지는 `llm/options.py` 유일 선언) ④ 채팅 헤더 드롭다운(모델/추론 강도, meta 기반, 새로고침 없이 다음 전송부터 적용) ⑤ **기본값 gpt-5-mini + effort low로 전환** (사용자 지시).
 - **실측**: TTFB 148초(gpt-5 기본) → **8.45초**(gpt-5-mini+low, 도구 1회 포함; 도구 미사용 단문은 수 초 내). 심층 분석은 드롭다운에서 gpt-5/high 선택.
 
+### 2026-09-01 — 채팅 백엔드 Claude Agent SDK 전환 파일럿 (검증 전 항목 PASS)
+
+- **OpenAI 경로 전면 폐기** (provider·tools 4종·options·관련 설정/테스트 삭제, openai 패키지 제거). 롤백 지점: 커밋 `c59ffe8`.
+- **ClaudeAgentProvider** (`llm/claude_agent_provider.py`): claude-agent-sdk `query()` 하네스, cwd=프로젝트 루트(CLAUDE.md 오염 방지 위해 setting_sources=[] — 채팅 전용 시스템 프롬프트 명시 구성), 스트리밍 → 기존 StreamEvent 정규화, 트랜스크립트 기록 억제. 인증은 이 PC의 Claude Code 구독 로그인 상속(팀 배포 시 `.env`에 ANTHROPIC_API_KEY만 설정하면 전환).
+- **모드 2종** (`llm/modes.py` 유일 선언 + `GET /api/meta/chat_modes`): 빠른 대화(quick, Haiku 4.5, 도구 차단, 1턴) / 심화 분석(deep, Opus 5, Read·Grep·Glob·WebSearch·WebFetch·제한 Bash(.venv 파이썬만), 25턴). 연산 정책(헤비 연산 사전 동의 문구·`.chat_tmp/` 격리)은 시스템 프롬프트에 준강제 주입.
+- **프론트**: 모델/강도 드롭다운 폐기 → 모드 세그먼트 2버튼 + 비전공자용 안내 캡션, tool 칩 한국어 병기(파일 읽기/파이썬 분석 등).
+- **실측**: quick TTFB **1.7초**(총 3.8초) / deep TTFB 18.3초·총 26초(Bash 3회) — deep은 첫 토큰까지 20초 내외가 정상(SLOW_HINT·하트비트로 UX 보호). **정확성 교차검증**: 모델이 답한 A171400 active_power 평균 98.34 MW·n=2393·범위 0.72~118.0이 pandas 독립 산출과 완전 일치(환각 아님).
+
 ## 2. 향후 계획 작업 명세
 
 각 단계는 CLAUDE.md 에이전트 체계(planner 명세 → 코딩 → verifier)로 수행한다.

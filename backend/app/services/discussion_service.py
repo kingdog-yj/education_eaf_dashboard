@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
 
+from app.llm import modes
 from app.llm.base import ChatMessage, LLMProvider, StreamEvent
 from app.llm.context_builder import ContextBuilder, DashboardContext
 
@@ -13,10 +14,9 @@ from app.llm.context_builder import ContextBuilder, DashboardContext
 class DiscussionRequest(BaseModel):
     messages: list[ChatMessage]            # 전체 대화 이력 (마지막이 이번 user 메시지)
     context: DashboardContext | None = None
-    # 요청 단위 오버라이드 (선택지는 llm/options.py). null/누락이면 서버 기본값,
-    # 목록 밖 값이면 provider가 조용히 기본값으로 폴백한다(400 아님).
-    model: str | None = None
-    reasoning_effort: str | None = None
+    # 채팅 모드 (선택지는 llm/modes.py). null/누락/목록 밖 값이면 기본 모드로
+    # 조용히 폴백한다(400 아님).
+    mode: str | None = None
 
 
 class DiscussionService:
@@ -25,11 +25,7 @@ class DiscussionService:
         self._context_builder = context_builder or ContextBuilder()
 
     async def stream(self, req: DiscussionRequest) -> AsyncIterator[StreamEvent]:
-        system = self._context_builder.build_system_prompt(req.context)
-        async for event in self._provider.stream_chat(
-            system,
-            req.messages,
-            model=req.model,
-            reasoning_effort=req.reasoning_effort,
-        ):
+        spec = modes.resolve_mode(req.mode)
+        system = self._context_builder.build_system_prompt(req.context, spec)
+        async for event in self._provider.stream_chat(system, req.messages, mode=spec.id):
             yield event

@@ -1,6 +1,6 @@
 // Discussion 대화 상태 — 휘발성(서버 미저장). 브라우저 세션 동안만 유지.
 import { create } from "zustand";
-import type { ChatMessage } from "../api/types";
+import type { ChatMessage, ChatMode } from "../api/types";
 
 export interface Citation {
   url: string;
@@ -16,12 +16,9 @@ interface ChatState {
   toolHistory: string[];
   citations: Citation[];
   isStreaming: boolean;
-  /** 선택된 LLM 모델. null이면 서버 기본값을 따른다(휘발성 — 저장하지 않음). */
-  model: string | null;
-  /** 선택된 추론 강도(reasoning effort). null이면 서버 기본값. */
-  reasoningEffort: string | null;
-  setModel: (model: string | null) => void;
-  setReasoningEffort: (reasoningEffort: string | null) => void;
+  /** 선택된 대화 모드. null이면 서버 기본값(quick)을 따른다(휘발성 — 저장하지 않음). */
+  mode: ChatMode | null;
+  setMode: (mode: ChatMode) => void;
   addUserMessage: (content: string) => void;
   appendDelta: (delta: string) => void;
   setActiveTool: (name: string | null) => void;
@@ -38,10 +35,8 @@ export const useChatStore = create<ChatState>((set) => ({
   toolHistory: [],
   citations: [],
   isStreaming: false,
-  model: null,
-  reasoningEffort: null,
-  setModel: (model) => set({ model }),
-  setReasoningEffort: (reasoningEffort) => set({ reasoningEffort }),
+  mode: null,
+  setMode: (mode) => set({ mode }),
   addUserMessage: (content) =>
     set((s) => ({
       messages: [...s.messages, { role: "user", content }],

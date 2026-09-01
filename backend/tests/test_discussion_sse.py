@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_discussion_service
 from app.api.routes import discussion as discussion_route
-from app.llm import options
+from app.llm import modes
 from app.llm.base import StreamEvent, StreamEventType
 from app.main import app
 from app.services.discussion_service import DiscussionRequest
@@ -65,16 +65,15 @@ def test_no_heartbeat_when_events_are_prompt(monkeypatch):
     assert body.count("data: ") == 2
 
 
-# -- 요청 단위 모델/effort 오버라이드 ---------------------------------------
+# -- 요청 단위 채팅 모드 -----------------------------------------------------
 
 
-def _post_with_overrides(model, effort) -> DiscussionRequest:
+def _post_with_mode(mode) -> DiscussionRequest:
     """요청을 보내고 서비스가 실제로 받은 DiscussionRequest를 돌려준다."""
     service = _SlowService(0.0)
     app.dependency_overrides[get_discussion_service] = lambda: service
     body = _post_body()
-    body["model"] = model
-    body["reasoning_effort"] = effort
+    body["mode"] = mode
     try:
         with TestClient(app) as client:
             assert client.post("/api/discussion", json=body).status_code == 200
@@ -84,13 +83,11 @@ def _post_with_overrides(model, effort) -> DiscussionRequest:
     return service.seen[0]
 
 
-def test_discussion_request_parses_overrides():
-    req = _post_with_overrides("gpt-5", "high")
-    assert req.model == "gpt-5"
-    assert req.reasoning_effort == "high"
+def test_discussion_request_parses_mode():
+    assert _post_with_mode("deep").mode == "deep"
 
 
-def test_discussion_request_overrides_optional():
+def test_discussion_request_mode_optional():
     service = _SlowService(0.0)
     app.dependency_overrides[get_discussion_service] = lambda: service
     try:
@@ -98,21 +95,17 @@ def test_discussion_request_overrides_optional():
             assert client.post("/api/discussion", json=_post_body()).status_code == 200
     finally:
         app.dependency_overrides.pop(get_discussion_service, None)
-    assert service.seen[0].model is None
-    assert service.seen[0].reasoning_effort is None
+    assert service.seen[0].mode is None
 
 
-def test_invalid_overrides_are_accepted_and_fall_back():
-    # 목록 밖 값이어도 400이 아니라 200 — 폴백은 provider 계층 책임
-    req = _post_with_overrides("gpt-4o-mystery", "ultra")
-    assert req.model == "gpt-4o-mystery"
-    assert options.resolve_model(req.model, "gpt-5-mini") == "gpt-5-mini"
-    assert options.resolve_effort(req.reasoning_effort, "low") == "low"
+def test_invalid_mode_is_accepted_and_falls_back():
+    # 목록 밖 값이어도 400이 아니라 200 — 폴백은 llm/modes.py 책임
+    req = _post_with_mode("turbo")
+    assert req.mode == "turbo"
+    assert modes.resolve_mode(req.mode).id == "quick"
 
 
-def test_resolve_helpers():
-    assert options.resolve_model("gpt-5-nano", "gpt-5-mini") == "gpt-5-nano"
-    assert options.resolve_model(None, "gpt-5-mini") == "gpt-5-mini"
-    assert options.resolve_effort("minimal", "low") == "minimal"
-    assert options.resolve_effort(None, "low") == "low"
-    assert options.resolve_effort("", "low") == "low"
+def test_resolve_mode_helper():
+    assert modes.resolve_mode("deep").id == "deep"
+    assert modes.resolve_mode(None).id == "quick"
+    assert modes.resolve_mode("").id == "quick"

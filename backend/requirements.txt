@@ -6,14 +6,11 @@ python-dotenv
 pandas
 pyarrow
 numpy
-openai
-httpx
+claude-agent-sdk
+httpx        # fastapi.testclient(TestClient) 의존
 pytest
 pytest-asyncio
 
 # 향후 사내 DB 연결 시 활성화 (SqlHeatRepository)
 # pyodbc      # MSSQL
 # oracledb    # Oracle
-
-# 향후 Claude 전환 시 활성화 (AnthropicProvider)
-# anthropic

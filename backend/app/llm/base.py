@@ -1,4 +1,4 @@
-"""LLM provider 추상화. OpenAI(현재) ↔ Claude(향후) 전환은 .env의 LLM_PROVIDER로 완결.
+"""LLM provider 추상화. provider 교체는 .env의 LLM_PROVIDER로 완결한다.
 
 프론트/서비스 계층은 provider 중립 타입(ChatMessage, StreamEvent)만 다룬다.
 """
@@ -33,20 +33,18 @@ class StreamEvent(BaseModel):
 
 
 class LLMProvider(ABC):
-    """모든 provider는 (1) 내장 웹 검색 활성화, (2) DiscussionTool 브릿지,
-    (3) StreamEvent 정규화를 책임진다."""
+    """모든 provider는 (1) 모드별 도구/모델 구성, (2) StreamEvent 정규화를 책임진다."""
 
     @abstractmethod
     def stream_chat(
         self,
         system: str,
         messages: list[ChatMessage],
-        model: str | None = None,
-        reasoning_effort: str | None = None,
+        mode: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """model/reasoning_effort는 요청 단위 오버라이드(None이면 설정 기본값).
+        """mode는 채팅 모드 id(선택지는 llm/modes.py).
 
-        선택지는 llm/options.py 선언을 따르며, 목록 밖 값은 기본값으로 폴백한다.
+        누락/목록 밖 값이면 기본 모드로 조용히 폴백한다(에러 아님).
         """
         ...
 
@@ -56,12 +54,8 @@ def create_provider() -> LLMProvider:
     from app.config import get_settings
 
     settings = get_settings()
-    if settings.llm_provider == "openai":
-        from app.llm.openai_provider import OpenAIProvider
+    if settings.llm_provider == "claude_agent":
+        from app.llm.claude_agent_provider import ClaudeAgentProvider
 
-        return OpenAIProvider(settings)
-    if settings.llm_provider == "anthropic":
-        from app.llm.anthropic_provider import AnthropicProvider
-
-        return AnthropicProvider(settings)
+        return ClaudeAgentProvider(settings)
     raise ValueError(f"알 수 없는 LLM_PROVIDER: {settings.llm_provider}")
